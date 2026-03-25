@@ -51,23 +51,23 @@ jobs:
           TARGET_FILE="requirements.txt"
           TARGET_LINE="${DEPENDENCY} @ git+https://github.com/${OWNER}/${DEPENDENCY}.git@${NEXT_VERSION}"
           CHANGED="false"
+          TMP_FILE="$(mktemp)"
 
-          if [ ! -f "${TARGET_FILE}" ]; then
-            printf "%s\n" "${TARGET_LINE}" > "${TARGET_FILE}"
-            CHANGED="true"
-          elif rg -N "^${DEPENDENCY} @ " "${TARGET_FILE}" >/dev/null; then
-            if rg -N --fixed-strings "${TARGET_LINE}" "${TARGET_FILE}" >/dev/null; then
-              CHANGED="false"
-            else
-              awk -v dep="${DEPENDENCY}" -v line="${TARGET_LINE}" '
-                $0 ~ ("^" dep " @ ") { print line; next }
-                { print }
-              ' "${TARGET_FILE}" > "${TARGET_FILE}.tmp"
-              mv "${TARGET_FILE}.tmp" "${TARGET_FILE}"
-              CHANGED="true"
-            fi
+          if [ -f "${TARGET_FILE}" ]; then
+            awk -v dep="${DEPENDENCY}" -v line="${TARGET_LINE}" '
+              $0 ~ ("^" dep " @ ") { next }
+              { print }
+              END { print line }
+            ' "${TARGET_FILE}" > "${TMP_FILE}"
           else
-            printf "%s\n" "${TARGET_LINE}" >> "${TARGET_FILE}"
+            printf "%s\n" "${TARGET_LINE}" > "${TMP_FILE}"
+          fi
+
+          if [ -f "${TARGET_FILE}" ] && cmp -s "${TARGET_FILE}" "${TMP_FILE}"; then
+            CHANGED="false"
+            rm -f "${TMP_FILE}"
+          else
+            mv "${TMP_FILE}" "${TARGET_FILE}"
             CHANGED="true"
           fi
 
