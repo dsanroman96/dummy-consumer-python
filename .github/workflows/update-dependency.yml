@@ -1,0 +1,84 @@
+name: Update dependency version
+
+on:
+  repository_dispatch:
+    types: [dependency-released]
+
+permissions:
+  contents: write
+
+jobs:
+  update-dependency:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve incoming payload
+        id: incoming
+        run: |
+          set -euo pipefail
+
+          DEPENDENCY="$(python3 -c "import json,os; print(json.load(open(os.environ['GITHUB_EVENT_PATH'], encoding='utf-8')).get('client_payload', {}).get('dependency', ''))")"
+          VERSION="$(python3 -c "import json,os; print(json.load(open(os.environ['GITHUB_EVENT_PATH'], encoding='utf-8')).get('client_payload', {}).get('version', ''))")"
+
+          if [ -z "${DEPENDENCY}" ] || [ -z "${VERSION}" ]; then
+            echo "Missing dependency or version input."
+            exit 1
+          fi
+
+          if [[ ! "${DEPENDENCY}" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "Invalid dependency name: ${DEPENDENCY}"
+            exit 1
+          fi
+
+          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version format: ${VERSION}"
+            exit 1
+          fi
+
+          echo "dependency=${DEPENDENCY}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Update tracked version file
+        id: update
+        run: |
+          set -euo pipefail
+
+          DEPENDENCY="${{ steps.incoming.outputs.dependency }}"
+          NEXT_VERSION="${{ steps.incoming.outputs.version }}"
+          OWNER="dsanroman96"
+          TARGET_FILE="requirements.txt"
+          TARGET_LINE="${DEPENDENCY} @ git+https://github.com/${OWNER}/${DEPENDENCY}.git@${NEXT_VERSION}"
+          CHANGED="false"
+
+          if [ ! -f "${TARGET_FILE}" ]; then
+            printf "%s\n" "${TARGET_LINE}" > "${TARGET_FILE}"
+            CHANGED="true"
+          elif rg -N "^${DEPENDENCY} @ " "${TARGET_FILE}" >/dev/null; then
+            if rg -N --fixed-strings "${TARGET_LINE}" "${TARGET_FILE}" >/dev/null; then
+              CHANGED="false"
+            else
+              awk -v dep="${DEPENDENCY}" -v line="${TARGET_LINE}" '
+                $0 ~ ("^" dep " @ ") { print line; next }
+                { print }
+              ' "${TARGET_FILE}" > "${TARGET_FILE}.tmp"
+              mv "${TARGET_FILE}.tmp" "${TARGET_FILE}"
+              CHANGED="true"
+            fi
+          else
+            printf "%s\n" "${TARGET_LINE}" >> "${TARGET_FILE}"
+            CHANGED="true"
+          fi
+
+          echo "changed=${CHANGED}" >> "${GITHUB_OUTPUT}"
+
+      - name: Commit and push
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add requirements.txt
+          git commit -m "chore: update ${{ steps.incoming.outputs.dependency }} to ${{ steps.incoming.outputs.version }}"
+          git push
