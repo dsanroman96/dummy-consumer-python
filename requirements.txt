@@ -1,4 +1,4 @@
 # Dependency updates will be managed automatically.
 dummy-dep-python @ git+https://github.com/dsanroman96/dummy-dep-python.git@v0.0.0
-dummy-dep-generic @ git+https://github.com/dsanroman96/dummy-dep-generic.git@v0.6.5
 dummy-dep-typescript @ git+https://github.com/dsanroman96/dummy-dep-typescript.git@v1.1.4
+dummy-dep-generic @ git+https://github.com/dsanroman96/dummy-dep-generic.git@v0.6.6
